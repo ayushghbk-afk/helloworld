@@ -11,7 +11,7 @@ jobs:
     steps:
     - name: Run Kali Linux with RDP
       run: |
-        # Start Kali container with RDP
+        # Start Kali container with RDP - FIXED VERSION
         docker run -d \
           --name kali \
           -p 3389:3389 \
@@ -21,8 +21,17 @@ jobs:
             apt-get update && \
             apt-get install -y kali-desktop-xfce xorg xrdp && \
             service xrdp start && \
-            useradd -m -s /bin/bash kali && \
-            echo 'kali:kali' | chpasswd && \
+            
+            # Fix: Check if user exists, create or update password properly
+            if id 'kali' &>/dev/null; then
+              echo 'kali:kali' | chpasswd
+            else
+              useradd -m -s /bin/bash kali && echo 'kali:kali' | chpasswd
+            fi && \
+            
+            # Enable root login for xrdp (optional)
+            echo 'kali ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers.d/kali && \
+            
             tail -f /dev/null
           "
         
@@ -42,13 +51,11 @@ jobs:
           echo "   Secret starts with: $(echo '${{ secrets.TS_AUTH_KYE }}' | cut -c1-10)..."
         else
           echo "❌ Secret TS_AUTH_KYE is EMPTY or NOT FOUND"
-          echo "   Please check GitHub repository secrets"
           exit 1
         fi
 
     - name: Connect to Tailscale
       run: |
-        # Use the secret with correct name: TS_AUTH_KYE
         sudo tailscale up --authkey "${{ secrets.TS_AUTH_KYE }}" --hostname kali-rdp
         echo "✅ Connected to Tailscale"
 
@@ -62,6 +69,13 @@ jobs:
         
         # Generate random password for this session
         RDP_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
+        
+        # Fix: Use proper method to change password
+        docker exec kali bash -c "echo 'root:$RDP_PASS' | chpasswd"
+        docker exec kali bash -c "echo 'kali:$RDP_PASS' | chpasswd 2>/dev/null || true"
+        
+        # Also set password for root if kali user doesn't exist
+        docker exec kali bash -c "useradd -m -s /bin/bash kali 2>/dev/null || true"
         docker exec kali bash -c "echo 'kali:$RDP_PASS' | chpasswd"
         
         # Display connection info
@@ -88,4 +102,3 @@ jobs:
           echo "[$(date '+%H:%M:%S')] Session active - IP: $TS_IP"
           sleep 300
         done
-        
