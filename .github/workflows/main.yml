@@ -37,6 +37,7 @@ jobs:
 
     - name: Connect to Tailscale
       run: |
+        # THIS IS THE FIXED LINE - note the ${{ secrets.TS_AUTH_KEY }}
         sudo tailscale up --authkey ${{ secrets.TS_AUTH_KEY }} --hostname kali-rdp
         echo "✅ Connected to Tailscale"
 
