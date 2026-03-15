@@ -11,7 +11,6 @@ jobs:
     steps:
     - name: Run Kali Linux with RDP
       run: |
-        # Start Kali container with RDP - FIXED VERSION
         docker run -d \
           --name kali \
           -p 3389:3389 \
@@ -21,21 +20,14 @@ jobs:
             apt-get update && \
             apt-get install -y kali-desktop-xfce xorg xrdp && \
             service xrdp start && \
-            
-            # Fix: Check if user exists, create or update password properly
             if id 'kali' &>/dev/null; then
               echo 'kali:kali' | chpasswd
             else
               useradd -m -s /bin/bash kali && echo 'kali:kali' | chpasswd
             fi && \
-            
-            # Enable root login for xrdp (optional)
             echo 'kali ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers.d/kali && \
-            
             tail -f /dev/null
           "
-        
-        # Wait for container to initialize
         sleep 30
         echo "✅ Kali container running"
 
@@ -44,41 +36,23 @@ jobs:
         curl -fsSL https://tailscale.com/install.sh | sh
         echo "✅ Tailscale installed"
 
-    - name: Debug - Check Tailscale Auth Key
-      run: |
-        if [ -n "${{ secrets.TS_AUTH_KYE }}" ]; then
-          echo "✅ Secret TS_AUTH_KYE exists and has value"
-          echo "   Secret starts with: $(echo '${{ secrets.TS_AUTH_KYE }}' | cut -c1-10)..."
-        else
-          echo "❌ Secret TS_AUTH_KYE is EMPTY or NOT FOUND"
-          exit 1
-        fi
-
     - name: Connect to Tailscale
+      env:
+        TAILSCALE_AUTHKEY: ${{ secrets.TS_AUTH_KYE }}
       run: |
-        sudo tailscale up --authkey "${{ secrets.TS_AUTH_KYE }}" --hostname kali-rdp
+        # Use environment variable to preserve the full key
+        sudo tailscale up --authkey "$TAILSCALE_AUTHKEY" --hostname kali-rdp
         echo "✅ Connected to Tailscale"
 
     - name: Show Connection Details
       run: |
-        # Wait for Tailscale to assign IP
         sleep 5
-        
-        # Get Tailscale IP
         TS_IP=$(tailscale ip -4)
-        
-        # Generate random password for this session
         RDP_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
         
-        # Fix: Use proper method to change password
-        docker exec kali bash -c "echo 'root:$RDP_PASS' | chpasswd"
-        docker exec kali bash -c "echo 'kali:$RDP_PASS' | chpasswd 2>/dev/null || true"
+        # Set password
+        docker exec kali bash -c "echo 'kali:$RDP_PASS' | chpasswd" 2>/dev/null || true
         
-        # Also set password for root if kali user doesn't exist
-        docker exec kali bash -c "useradd -m -s /bin/bash kali 2>/dev/null || true"
-        docker exec kali bash -c "echo 'kali:$RDP_PASS' | chpasswd"
-        
-        # Display connection info
         echo "=================================================="
         echo "✅ KALI LINUX RDP IS READY!"
         echo "=================================================="
@@ -86,15 +60,6 @@ jobs:
         echo "👤 USERNAME: kali"
         echo "🔑 PASSWORD: $RDP_PASS"
         echo "💻 RDP COMMAND: mstsc.exe /v:$TS_IP"
-        echo "=================================================="
-        echo ""
-        echo "⚠️ IMPORTANT:"
-        echo "1. Install Tailscale on your local PC: https://tailscale.com/download"
-        echo "2. Connect to Tailscale with the SAME account"
-        echo "3. Use the IP above in Remote Desktop"
-        echo ""
-        echo "Session will stay alive for 6 hours"
-        echo "Press Ctrl+C in Actions to stop early"
         echo "=================================================="
         
         # Keep alive
