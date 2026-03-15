@@ -1,0 +1,75 @@
+name: Kali Linux RDP with Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  kali-rdp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: Run Kali Linux with RDP
+      run: |
+        # Start Kali container with RDP
+        docker run -d \
+          --name kali \
+          -p 3389:3389 \
+          --privileged \
+          kalilinux/kali-rolling \
+          /bin/bash -c "
+            apt-get update && \
+            apt-get install -y kali-desktop-xfce xorg xrdp && \
+            service xrdp start && \
+            useradd -m -s /bin/bash kali && \
+            echo 'kali:kali' | chpasswd && \
+            tail -f /dev/null
+          "
+        
+        # Wait for container to initialize
+        sleep 30
+        echo "✅ Kali container running"
+
+    - name: Install Tailscale
+      run: |
+        curl -fsSL https://tailscale.com/install.sh | sh
+        echo "✅ Tailscale installed"
+
+    - name: Connect to Tailscale
+      run: |
+        sudo tailscale up --authkey ${{ secrets.TS_AUTH_KEY }} --hostname kali-rdp
+        echo "✅ Connected to Tailscale"
+
+    - name: Show Connection Details
+      run: |
+        # Get Tailscale IP
+        TS_IP=$(tailscale ip -4)
+        
+        # Generate random password for this session
+        RDP_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
+        docker exec kali bash -c "echo 'kali:$RDP_PASS' | chpasswd"
+        
+        # Display connection info
+        echo "=================================================="
+        echo "✅ KALI LINUX RDP IS READY!"
+        echo "=================================================="
+        echo "🌐 TAILSCALE IP: $TS_IP"
+        echo "👤 USERNAME: kali"
+        echo "🔑 PASSWORD: $RDP_PASS"
+        echo "💻 RDP COMMAND: mstsc.exe /v:$TS_IP"
+        echo "=================================================="
+        echo ""
+        echo "⚠️ IMPORTANT:"
+        echo "1. Install Tailscale on your local PC: https://tailscale.com/download"
+        echo "2. Connect to Tailscale with the SAME account"
+        echo "3. Use the IP above in Remote Desktop"
+        echo ""
+        echo "Session will stay alive for 6 hours"
+        echo "Press Ctrl+C in Actions to stop early"
+        echo "=================================================="
+        
+        # Keep alive
+        while true; do
+          echo "[$(date '+%H:%M:%S')] Session active - IP: $TS_IP"
+          sleep 300
+        done
